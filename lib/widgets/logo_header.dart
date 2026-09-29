@@ -1,37 +1,41 @@
 import 'package:flutter/material.dart';
 
 class LogoHeader extends StatelessWidget {
-  const LogoHeader({super.key});
+  final double size;
+
+  const LogoHeader({super.key, this.size = 400});
 
   @override
   Widget build(BuildContext context) {
+    final posFontSize = (size * 0.04).clamp(8.0, 16.0);
+
     return Center(
       child: SizedBox(
-        width: 400,
-        height: 400,
+        width: size,
+        height: size,
         child: Stack(
           alignment: Alignment.center,
           children: [
             Image.asset(
               'assets/logo.png',
-              height: 400,
+              height: size,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
-                return const Icon(
+                return Icon(
                   Icons.storefront_rounded,
-                  size: 100,
+                  size: size * 0.25,
                   color: Colors.white,
                 );
               },
             ),
-            const Positioned(
-              top: 100,
-              right: 94,
+            Positioned(
+              top: size * 0.25,
+              right: size * 0.235,
               child: Text(
                 'POS',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: posFontSize,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.8,
                 ),

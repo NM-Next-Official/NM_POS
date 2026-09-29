@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../languages/app_localizations.dart';
+import '../widgets/glass_button.dart';
 import '../widgets/logo_header.dart';
 import 'language_selection_screen.dart';
 
@@ -7,53 +10,28 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF030D19),
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 30),
-
-            // Exact identical Logo placement
+            const SizedBox(height: 20),
             const LogoHeader(),
-
-            const Spacer(),
-
-            // Start Button
-            Padding(
-              padding: const EdgeInsets.only(bottom: 60.0),
-              child: SizedBox(
-                width: 220,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const LanguageSelectionScreen(),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE5ECF4),
-                    foregroundColor: const Color(0xFF030D19),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(26),
-                    ),
-                    elevation: 4,
-                    shadowColor: Colors.black.withValues(alpha: 0.5),
+            const Spacer(flex: 3),
+            GlassButton(
+              label: t.start,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const LanguageSelectionScreen(),
                   ),
-                  child: const Text(
-                    'START',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ),
-              ),
+                );
+              },
             ),
+            const Spacer(flex: 2),
           ],
         ),
       ),

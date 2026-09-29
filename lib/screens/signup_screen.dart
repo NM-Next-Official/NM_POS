@@ -1,27 +1,34 @@
 import 'package:flutter/material.dart';
-import '../utils/dynamic_translator.dart';
-import '../widgets/logo_header.dart';
+import 'package:provider/provider.dart';
+
+import '../languages/app_localizations.dart';
+import '../models/user_role.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/auth/auth_button.dart';
+import '../widgets/auth/auth_scaffold.dart';
+import '../widgets/auth/auth_text_field.dart';
 import 'home_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
-  const SignUpScreen({super.key});
+  final UserRole role;
+
+  const SignUpScreen({super.key, required this.role});
 
   @override
   State<SignUpScreen> createState() => _SignUpScreenState();
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _businessNameController = TextEditingController();
-  final TextEditingController _businessAddressController =
-      TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
-
   final _formKey = GlobalKey<FormState>();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _businessNameController = TextEditingController();
+  final _businessAddressController = TextEditingController();
+  final _identifierController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
+  bool get _isOwner => widget.role == UserRole.owner;
 
   @override
   void dispose() {
@@ -29,225 +36,220 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _lastNameController.dispose();
     _businessNameController.dispose();
     _businessAddressController.dispose();
-    _emailController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  // Dynamic text translator wrapper
-  Widget _buildTranslatedText(
-    String text, {
-    TextStyle? style,
-    TextAlign? textAlign,
-  }) {
-    return FutureBuilder<String>(
-      future: DynamicTranslator.translate(text),
-      builder: (context, snapshot) {
-        return Text(
-          snapshot.data ?? text,
-          style: style,
-          textAlign: textAlign,
-        );
-      },
-    );
-  }
+  bool _isEmail(String value) =>
+      RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(value);
 
-  // Reusable text field builder for single full-width fields
-  Widget _buildInputField({
-    required TextEditingController controller,
-    required String hintText,
-    IconData? icon,
-    bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return FutureBuilder<String>(
-      future: DynamicTranslator.translate(hintText),
-      builder: (context, snapshot) {
-        return TextFormField(
-          controller: controller,
-          obscureText: obscureText,
-          keyboardType: keyboardType,
-          style: const TextStyle(color: Colors.white, fontSize: 16),
-          decoration: InputDecoration(
-            hintText: snapshot.data ?? hintText,
-            hintStyle: const TextStyle(
-              color: Color(0xFFB0BEC5),
-              fontSize: 16,
-            ),
-            prefixIcon: icon != null
-                ? Icon(
-                    icon,
-                    color: Colors.black87,
-                    size: 24,
-                  )
-                : null,
-            filled: true,
-            fillColor: const Color(0xFF536273).withValues(alpha: 0.55),
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 16,
-              horizontal: 20,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(27),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        );
-      },
+  bool _isPhone(String value) =>
+      value.replaceAll(RegExp(r'\D'), '').length >= 8;
+
+  Future<void> _handleSignup() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final auth = context.read<AuthProvider>();
+    final identifier = _identifierController.text.trim();
+    final useEmail = _isEmail(identifier);
+
+    final success = await auth.signup(
+      role: widget.role,
+      firstName: _firstNameController.text.trim(),
+      lastName: _lastNameController.text.trim(),
+      email: useEmail ? identifier : null,
+      phone: useEmail ? null : identifier,
+      password: _passwordController.text,
+      businessName: _isOwner ? _businessNameController.text.trim() : null,
+      businessAddress: _isOwner ? _businessAddressController.text.trim() : null,
     );
+
+    if (!mounted) return;
+
+    if (success) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (_) => false,
+      );
+    } else {
+      final t = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.errorMessage ?? t.signupFailed),
+          backgroundColor: const Color(0xFFB71C1C),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF030D19),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28.0),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight,
+    final t = AppLocalizations.of(context);
+    final auth = context.watch<AuthProvider>();
+
+    return AuthScaffold(
+      title: t.createAccount,
+      subtitle: _isOwner ? t.businessOwner : t.personalBusiness,
+      showBackButton: true,
+      dense: true,
+      logoSize: 140,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sectionLabel(t.personalDetails),
+            const SizedBox(height: 8),
+
+            Row(
+              children: [
+                Expanded(
+                  child: AuthTextField(
+                    controller: _firstNameController,
+                    hint: t.firstName,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? t.pleaseEnterFirstName
+                        : null,
+                  ),
                 ),
-                child: IntrinsicHeight(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AuthTextField(
+                    controller: _lastNameController,
+                    hint: t.lastName,
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? t.pleaseEnterLastName
+                        : null,
+                  ),
+                ),
+              ],
+            ),
 
-                        // Logo Header Component
-                        const LogoHeader(),
+            const SizedBox(height: 14),
 
-                        // Subtitle text under Logo
-                        _buildTranslatedText(
-                          'Make Your Business Lite',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
+            if (_isOwner) ...[
+              _sectionLabel(t.businessDetails),
+              const SizedBox(height: 8),
+              AuthTextField(
+                controller: _businessNameController,
+                hint: t.businessName,
+                icon: Icons.storefront_rounded,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? t.pleaseEnterBusinessName
+                    : null,
+              ),
+              const SizedBox(height: 10),
+              AuthTextField(
+                controller: _businessAddressController,
+                hint: t.businessAddress,
+                icon: Icons.location_on_outlined,
+              ),
+              const SizedBox(height: 14),
+            ],
 
-                        const SizedBox(height: 24),
+            _sectionLabel(t.accountDetails),
+            const SizedBox(height: 8),
 
-                        // First Name & Last Name Side-by-Side Fields
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildInputField(
-                                controller: _firstNameController,
-                                hintText: 'First Name',
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildInputField(
-                                controller: _lastNameController,
-                                hintText: 'Last Name',
-                              ),
-                            ),
-                          ],
-                        ),
+            AuthTextField(
+              controller: _identifierController,
+              hint: t.emailOrPhone,
+              icon: Icons.alternate_email_rounded,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return t.enterYourEmail;
+                final val = v.trim();
+                if (!_isEmail(val) && !_isPhone(val)) {
+                  return t.enterYourEmail;
+                }
+                return null;
+              },
+            ),
 
-                        const SizedBox(height: 14),
+            const SizedBox(height: 10),
 
-                        // Your Business Name
-                        _buildInputField(
-                          controller: _businessNameController,
-                          hintText: 'Your Business Name',
-                          icon: Icons.storefront_rounded,
-                        ),
+            AuthTextField(
+              controller: _passwordController,
+              hint: t.passwordHint,
+              icon: Icons.shield_rounded,
+              isPassword: true,
+              textInputAction: TextInputAction.next,
+              validator: (v) {
+                if (v == null || v.isEmpty) return t.pleaseEnterPassword;
+                if (v.length < 6) return t.passwordTooShort;
+                return null;
+              },
+            ),
 
-                        const SizedBox(height: 14),
+            const SizedBox(height: 10),
 
-                        // Business Address
-                        _buildInputField(
-                          controller: _businessAddressController,
-                          hintText: 'Business Address',
-                          icon: Icons.smartphone_rounded,
-                        ),
+            AuthTextField(
+              controller: _confirmPasswordController,
+              hint: t.confirmPassword,
+              icon: Icons.shield_rounded,
+              isPassword: true,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _handleSignup(),
+              validator: (v) {
+                if (v == null || v.isEmpty) return t.pleaseEnterPassword;
+                if (v != _passwordController.text) {
+                  return t.passwordsDoNotMatch;
+                }
+                return null;
+              },
+            ),
 
-                        const SizedBox(height: 14),
+            const SizedBox(height: 18),
 
-                        // Enter your e-mail
-                        _buildInputField(
-                          controller: _emailController,
-                          hintText: 'Enter your e-mail',
-                          icon: Icons.email_rounded,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
+            AuthButton(
+              label: auth.isBusy ? t.creatingAccount : t.signUp,
+              loading: auth.isBusy,
+              icon: Icons.person_add_alt_1_rounded,
+              onPressed: _handleSignup,
+            ),
 
-                        const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-                        // Password
-                        _buildInputField(
-                          controller: _passwordController,
-                          hintText: 'Password',
-                          icon: Icons.shield_rounded,
-                          obscureText: true,
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        // Confirm Password (Fixed typo: 'Confrom' -> 'Confirm')
-                        _buildInputField(
-                          controller: _confirmPasswordController,
-                          hintText: 'Confirm Password',
-                          icon: Icons.shield_rounded,
-                          obscureText: true,
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Submit Action Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              if (_formKey.currentState?.validate() ?? false) {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => const HomeScreen(),
-                                  ),
-                                );
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFE5ECF4),
-                              foregroundColor: const Color(0xFF030D19),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(26),
-                              ),
-                              elevation: 4,
-                              shadowColor: Colors.black.withValues(alpha: 0.5),
-                            ),
-                            child: _buildTranslatedText(
-                              'Sign Up',
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-                      ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  t.alreadyRegistered,
+                  style: const TextStyle(
+                    color: Color(0xFF607D8B),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Text(
+                    t.signIn,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFFB0BEC5),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      );
 }

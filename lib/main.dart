@@ -1,6 +1,14 @@
 import 'package:flutter/material.dart';
-import 'utils/dynamic_translator.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
+
+import 'config/db_config.dart';
+import 'languages/app_localizations.dart';
+import 'providers/auth_provider.dart';
 import 'screens/welcome_screen.dart';
+import 'services/auth/postgres_auth_service.dart';
+import 'services/db/postgres_db.dart';
+import 'utils/app_locale.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,34 +18,96 @@ void main() {
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  static _MyAppState of(BuildContext context) =>
-      context.findAncestorStateOfType<_MyAppState>()!;
+  static MyAppState of(BuildContext context) =>
+      context.findAncestorStateOfType<MyAppState>()!;
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<MyApp> createState() => MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
-  // Store active language code ('en', 'bn', 'hi')
-  String _currentLanguageCode = 'en';
+class MyAppState extends State<MyApp> {
+  late final AuthProvider _authProvider;
+  Locale _locale = const Locale('en');
+  bool _ready = false;
 
-  String get currentLanguageCode => _currentLanguageCode;
+  @override
+  void initState() {
+    super.initState();
+    // ⚠️ Change: MockAuthService → PostgresAuthService
+    _authProvider = AuthProvider(PostgresAuthService());
+    _bootstrap();
+  }
 
-  void setLanguage(String language) {
+  Future<void> _bootstrap() async {
+    // ─── Test PostgreSQL connection ───
+    try {
+      await PostgresDb.instance.init();
+      // ignore: avoid_print
+      print('✅ PostgreSQL connected');
+      // ignore: avoid_print
+      print('   → ${DbConfig.database}@${DbConfig.host}:${DbConfig.port}');
+      // ignore: avoid_print
+      print('   → user: ${DbConfig.username}');
+    } catch (e) {
+      // ignore: avoid_print
+      print('❌ PostgreSQL init failed: $e');
+      // ignore: avoid_print
+      print('   Host: ${DbConfig.host}');
+      // ignore: avoid_print
+      print('   Port: ${DbConfig.port}');
+      // ignore: avoid_print
+      print('   DB:   ${DbConfig.database}');
+      // ignore: avoid_print
+      print('   User: ${DbConfig.username}');
+    }
+
+    // ─── Restore language + session ───
+    final code = await AppLocale.load();
+    await _authProvider.bootstrap();
+
+    if (!mounted) return;
     setState(() {
-      // Sync with DynamicTranslator
-      DynamicTranslator.setLanguage(language);
-      _currentLanguageCode = DynamicTranslator.activeLanguageCode;
+      _locale = AppLocale.toLocale(code);
+      _ready = true;
     });
+  }
+
+  Future<void> setLanguage(String code) async {
+    await AppLocale.save(code);
+    if (!mounted) return;
+    setState(() => _locale = AppLocale.toLocale(code));
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'NM POS',
-      theme: ThemeData.dark(),
-      home: const WelcomeScreen(),
+    if (!_ready) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Color(0xFF030D19),
+          body: Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
+    return ChangeNotifierProvider<AuthProvider>.value(
+      value: _authProvider,
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'NM POS',
+        theme: ThemeData.dark(),
+        locale: _locale,
+        supportedLocales: AppLocale.supportedLocales,
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: const WelcomeScreen(),
+      ),
     );
   }
 }
