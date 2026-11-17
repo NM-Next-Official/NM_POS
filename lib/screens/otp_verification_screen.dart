@@ -10,18 +10,21 @@ import '../services/auth/auth_service.dart';
 import '../widgets/auth/auth_button.dart';
 import '../widgets/auth/auth_scaffold.dart';
 import '../widgets/auth/otp_input.dart';
+import 'home_screen.dart';
 import 'reset_password_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String destination;
   final OtpChannel channel;
   final OtpPurpose purpose;
+  final PendingSignupData? signupData;
 
   const OtpVerificationScreen({
     super.key,
     required this.destination,
     required this.channel,
     required this.purpose,
+    this.signupData,
   });
 
   @override
@@ -85,7 +88,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     if (!mounted) return;
 
     if (token == null) {
-      // Failed
       _codeController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -96,7 +98,56 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       return;
     }
 
-    // Success — go to reset screen
+    // ─── Flow A: Sign Up Verification ───
+    if (widget.purpose == OtpPurpose.signup) {
+      final data = widget.signupData;
+      if (data == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registration data was not found. Please try signing up again.'),
+            backgroundColor: Color(0xFFB71C1C),
+          ),
+        );
+        return;
+      }
+
+      final success = await auth.signup(
+        role: data.role,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        password: data.password,
+        businessName: data.businessName,
+        businessAddress: data.businessAddress,
+        verificationToken: token,
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Account verified and created successfully! Welcome.'),
+            backgroundColor: Color(0xFF1B5E20),
+          ),
+        );
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.errorMessage ?? t.signupFailed),
+            backgroundColor: const Color(0xFFB71C1C),
+          ),
+        );
+      }
+      return;
+    }
+
+    // ─── Flow B: Password Reset ───
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -144,9 +195,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     final t = AppLocalizations.of(context);
     final auth = context.watch<AuthProvider>();
 
+    final subtitle = widget.purpose == OtpPurpose.signup
+        ? 'Enter the 6-digit verification code sent to\n${widget.destination} to complete your signup.'
+        : '${t.otpSubtitle}\n${widget.destination}';
+
     return AuthScaffold(
       title: t.otpTitle,
-      subtitle: '${t.otpSubtitle}\n${widget.destination}',
+      subtitle: subtitle,
       showBackButton: true,
       logoSize: 160,
       child: Column(

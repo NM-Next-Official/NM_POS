@@ -4,6 +4,8 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
+  universal_ble
+  flutter_thermal_printer
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:postgres/postgres.dart';
@@ -11,6 +13,7 @@ import '../../models/otp_request.dart';
 import '../../models/user_role.dart';
 import '../db/postgres_db.dart';
 import 'auth_service.dart';
+import 'otp_email_sender.dart';
 
 /// PostgreSQL-backed auth service.
 ///
@@ -28,10 +31,7 @@ class PostgresAuthService implements AuthService {
     final pool = await PostgresDb.instance.pool;
     final rows = await pool.execute(
       Sql.named('''
-        SELECT s.access_token, s.refresh_token, s.expires_at,
-               u.id, u.email, u.phone, u.first_name, u.last_name,
-               u.role, u.business_name, u.business_address,
-               u.outlet_ids, u.created_at
+        SELECT s.access_token, s.refresh_token, s.expires_at, u.*
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.expires_at > NOW()
@@ -74,8 +74,8 @@ class PostgresAuthService implements AuthService {
       );
     }
     final row = rows.first.toColumnMap();
-    if (!_verifyPassword(
-        password, row['password_hash'] as String, row['password_salt'] as String)) {
+    if (!_verifyPassword(password, row['password_hash'] as String,
+        row['password_salt'] as String)) {
       throw const AuthException('invalid-password', 'Incorrect password');
     }
     return _createSession(_rowToUser(row));
@@ -99,8 +99,8 @@ class PostgresAuthService implements AuthService {
       );
     }
     final row = rows.first.toColumnMap();
-    if (!_verifyPassword(
-        password, row['password_hash'] as String, row['password_salt'] as String)) {
+    if (!_verifyPassword(password, row['password_hash'] as String,
+        row['password_salt'] as String)) {
       throw const AuthException('invalid-password', 'Incorrect password');
     }
     return _createSession(_rowToUser(row));
@@ -118,6 +118,7 @@ class PostgresAuthService implements AuthService {
     required String password,
     String? businessName,
     String? businessAddress,
+    String? verificationToken,
   }) async {
     if (email == null && phone == null) {
       throw const AuthException(
@@ -133,6 +134,26 @@ class PostgresAuthService implements AuthService {
         'phone-in-use',
         'This phone number is already taken',
       );
+    }
+
+    final pool = await PostgresDb.instance.pool;
+
+    if (verificationToken != null && email != null) {
+      final normalizedEmail = email.trim().toLowerCase();
+      final proof = await pool.execute(
+        Sql.named('''
+          SELECT id FROM otp_codes
+          WHERE id = @proof AND destination = @dest
+            AND purpose = 'signup' AND verified = TRUE
+        '''),
+        parameters: {'proof': verificationToken, 'dest': normalizedEmail},
+      );
+      if (proof.isEmpty) {
+        throw const AuthException(
+          'invalid-otp-token',
+          'Email verification is required or has expired. Please verify your email.',
+        );
+      }
     }
 
     final user = AppUser(
@@ -151,7 +172,6 @@ class PostgresAuthService implements AuthService {
     final salt = _generateSalt();
     final hash = _hashPassword(password, salt);
 
-    final pool = await PostgresDb.instance.pool;
     await pool.execute(
       Sql.named('''
         INSERT INTO users
@@ -178,6 +198,14 @@ class PostgresAuthService implements AuthService {
       },
     );
 
+    // Clean up verified signup OTP codes for this destination
+    if (email != null) {
+      await pool.execute(
+        Sql.named("DELETE FROM otp_codes WHERE destination = @dest AND purpose = 'signup'"),
+        parameters: {'dest': user.email},
+      );
+    }
+
     return _createSession(user);
   }
 
@@ -189,6 +217,10 @@ class PostgresAuthService implements AuthService {
     required OtpChannel channel,
     required OtpPurpose purpose,
   }) async {
+    if (channel != OtpChannel.email) {
+      throw const AuthException(
+          'email-only', 'Only email verification is supported.');
+    }
     if (purpose == OtpPurpose.passwordReset) {
       final exists = channel == OtpChannel.email
           ? await emailExists(destination)
@@ -197,6 +229,17 @@ class PostgresAuthService implements AuthService {
         throw const AuthException(
           'user-not-found',
           'No account found with this information',
+        );
+      }
+    }
+    if (purpose == OtpPurpose.signup) {
+      final exists = channel == OtpChannel.email
+          ? await emailExists(destination)
+          : await phoneExists(destination);
+      if (exists) {
+        throw const AuthException(
+          'email-in-use',
+          'This email is already registered. Please sign in instead.',
         );
       }
     }
@@ -214,7 +257,7 @@ class PostgresAuthService implements AuthService {
     await pool.execute(
       Sql.named('''
         DELETE FROM otp_codes
-        WHERE destination = @dest AND purpose = @purpose AND verified = FALSE
+        WHERE destination = @dest AND purpose = @purpose
       '''),
       parameters: {'dest': normalized, 'purpose': purpose.name},
     );
@@ -236,8 +279,36 @@ class PostgresAuthService implements AuthService {
       },
     );
 
-    // ignore: avoid_print
-    print('📧 [OTP] $purpose → $destination : code = $code');
+    try {
+      await OtpEmailSender.send(
+        email: normalized,
+        code: code,
+        purpose: purpose.name,
+      );
+    } catch (error) {
+      await pool.execute(
+        Sql.named('''
+          DELETE FROM otp_codes
+          WHERE destination = @dest AND purpose = @purpose AND code = @code
+        '''),
+        parameters: {'dest': normalized, 'purpose': purpose.name, 'code': code},
+      );
+      final details = error.toString().toLowerCase();
+      if (error is TimeoutException ||
+          details.contains('socketexception') ||
+          details.contains('connection refused') ||
+          details.contains('failed host lookup')) {
+        throw const AuthException(
+          'email-service-unavailable',
+          'Email service is unreachable. Start the NM POS mail API, then try again.',
+        );
+      }
+      if (error is AuthException) rethrow;
+      throw const AuthException(
+        'email-delivery-failed',
+        'Could not send the verification email. Please try again.',
+      );
+    }
   }
 
   @override
@@ -275,12 +346,21 @@ class PostgresAuthService implements AuthService {
       throw const AuthException('invalid-otp', 'Incorrect or expired OTP code');
     }
 
-    await pool.execute(
-      Sql.named('UPDATE otp_codes SET verified = TRUE WHERE id = @id'),
+    final marked = await pool.execute(
+      Sql.named('''
+        UPDATE otp_codes SET verified = TRUE
+        WHERE id = @id AND verified = FALSE AND expires_at > NOW()
+      '''),
       parameters: {'id': row['id']},
     );
+    if (marked.affectedRows == 0) {
+      throw const AuthException('invalid-otp',
+          'This code has expired or was already used. Request a new code.');
+    }
 
-    return _uuid.v4();
+    // The OTP row UUID is the one-time reset proof. It is checked and consumed
+    // by resetPassword so knowing an email address alone cannot change a password.
+    return row['id'].toString();
   }
 
   // ───────── Password Reset ─────────
@@ -305,37 +385,49 @@ class PostgresAuthService implements AuthService {
 
     final pool = await PostgresDb.instance.pool;
 
-    final rows = await pool.execute(
-      Sql.named('''
-        SELECT id FROM users
-        WHERE ${isEmail ? 'LOWER(email)' : 'phone'} = @ident
-        LIMIT 1
-      '''),
-      parameters: {'ident': normalized},
-    );
-    if (rows.isEmpty) {
-      throw const AuthException('user-not-found', 'Account no longer exists');
-    }
-    final userId = rows.first.toColumnMap()['id'];
-
     final salt = _generateSalt();
     final hash = _hashPassword(newPassword, salt);
+    await pool.runTx((tx) async {
+      final proof = await tx.execute(
+        Sql.named('''
+          SELECT id FROM otp_codes
+          WHERE id = @proof AND destination = @dest
+            AND purpose = 'passwordReset' AND channel = 'email'
+            AND verified = TRUE AND expires_at > NOW()
+          FOR UPDATE
+        '''),
+        parameters: {'proof': verificationToken, 'dest': normalized},
+      );
+      if (proof.isEmpty) {
+        throw const AuthException('invalid-reset-proof',
+            'Your reset code is no longer valid. Request a new code.');
+      }
 
-    await pool.execute(
-      Sql.named('''
-        UPDATE users
-        SET password_hash = @hash,
-            password_salt = @salt,
-            updated_at = NOW()
-        WHERE id = @id
-      '''),
-      parameters: {'hash': hash, 'salt': salt, 'id': userId},
-    );
-
-    await pool.execute(
-      Sql.named('DELETE FROM sessions WHERE user_id = @id'),
-      parameters: {'id': userId},
-    );
+      final users = await tx.execute(
+        Sql.named('''
+          SELECT id FROM users WHERE ${isEmail ? 'LOWER(email)' : 'phone'} = @ident LIMIT 1
+        '''),
+        parameters: {'ident': normalized},
+      );
+      if (users.isEmpty) {
+        throw const AuthException('user-not-found', 'Account no longer exists');
+      }
+      final userId = users.first.toColumnMap()['id'];
+      await tx.execute(
+        Sql.named('''
+          UPDATE users SET password_hash = @hash, password_salt = @salt, updated_at = NOW()
+          WHERE id = @id
+        '''),
+        parameters: {'hash': hash, 'salt': salt, 'id': userId},
+      );
+      await tx.execute(Sql.named('DELETE FROM sessions WHERE user_id = @id'),
+          parameters: {'id': userId});
+      await tx.execute(
+        Sql.named(
+            "DELETE FROM otp_codes WHERE destination = @dest AND purpose = 'passwordReset'"),
+        parameters: {'dest': normalized},
+      );
+    });
   }
 
   // ───────── Helpers ─────────
@@ -439,6 +531,9 @@ class PostgresAuthService implements AuthService {
       businessName: row['business_name'] as String?,
       businessAddress: row['business_address'] as String?,
       outletIds: outletList,
+      profileImageData: row['profile_image_data'] is Uint8List
+          ? row['profile_image_data'] as Uint8List
+          : null,
       createdAt: (row['created_at'] as DateTime).toLocal(),
     );
   }

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../main.dart';
 import '../utils/app_locale.dart';
 import '../widgets/logo_header.dart';
@@ -13,7 +16,13 @@ class LanguageSelectionScreen extends StatefulWidget {
 }
 
 class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
-  String _selectedCode = 'en';
+  late final FixedExtentScrollController _languageController =
+      FixedExtentScrollController();
+  late final List<String> _codes = AppLocale.supportedLanguages.keys.toList();
+  late final List<String> _names = AppLocale.supportedLanguages.values.toList();
+  int _selectedIndex = 0;
+  Timer? _languageSaveDebounce;
+  bool _openingAuth = false;
 
   @override
   void initState() {
@@ -23,91 +32,167 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
 
   Future<void> _loadCurrent() async {
     final code = await AppLocale.load();
-    if (mounted) setState(() => _selectedCode = code);
+    final index = _codes.indexOf(code);
+    if (!mounted || index < 0) return;
+    setState(() => _selectedIndex = index);
+    _languageController.animateToItem(
+      index,
+      duration: const Duration(milliseconds: 480),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _onLanguageChanged(int index) {
+    setState(() => _selectedIndex = index);
+    _languageSaveDebounce?.cancel();
+    _languageSaveDebounce = Timer(const Duration(milliseconds: 180), () {
+      if (mounted) MyApp.of(context).setLanguage(_codes[_selectedIndex]);
+    });
+  }
+
+  Future<void> _openAuthForSelectedLanguage() async {
+    if (_openingAuth) return;
+    setState(() => _openingAuth = true);
+    _languageSaveDebounce?.cancel();
+    await MyApp.of(context).setLanguage(_codes[_selectedIndex]);
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+    );
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF030D19),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(flex: 3),
-            const LogoHeader(),
-            const Spacer(flex: 3),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 40.0),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 24.0),
-                padding: const EdgeInsets.symmetric(vertical: 12.0),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(40),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    width: 1,
-                  ),
-                ),
+  void dispose() {
+    _languageSaveDebounce?.cancel();
+    _languageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: const Color(0xFF030D19),
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 22),
+              child: ConstrainedBox(
+                constraints:
+                    BoxConstraints(minHeight: constraints.maxHeight - 40),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: AppLocale.supportedLanguages.entries.map((entry) {
-                    final code = entry.key;
-                    final label = entry.value;
-                    final isSelected = code == _selectedCode;
-
-                    return GestureDetector(
-                      onTap: () async {
-                        setState(() => _selectedCode = code);
-                        await MyApp.of(context).setLanguage(code);
-
-                        await Future.delayed(
-                          const Duration(milliseconds: 200),
-                        );
-                        if (!context.mounted) return;
-
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AuthScreen(),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16.0,
-                          vertical: 6.0,
-                        ),
-                        width: double.infinity,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFE5ECF4)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(26),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: isSelected ? 24 : 22,
-                            fontWeight:
-                                isSelected ? FontWeight.w900 : FontWeight.w600,
-                            color: isSelected
-                                ? const Color(0xFF030D19)
-                                : Colors.white.withValues(alpha: 0.45),
-                            letterSpacing: 0.5,
-                          ),
+                  children: [
+                    SizedBox(height: constraints.maxHeight * .04),
+                    const LogoHeader(size: 280),
+                    const SizedBox(height: 16),
+                    Text(
+                      _chooseLanguageLabel,
+                      style: TextStyle(
+                        color: Color(0xFFB9C6D2),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      height: 204,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D1A29),
+                        borderRadius: BorderRadius.circular(32),
+                        border: Border.all(color: const Color(0xFF304358)),
+                      ),
+                      child: ListWheelScrollView.useDelegate(
+                        controller: _languageController,
+                        itemExtent: 58,
+                        diameterRatio: 1.8,
+                        perspective: 0.002,
+                        physics: const FixedExtentScrollPhysics(),
+                        onSelectedItemChanged: _onLanguageChanged,
+                        childDelegate: ListWheelChildBuilderDelegate(
+                          childCount: _names.length,
+                          builder: (context, index) {
+                            final selected = index == _selectedIndex;
+                            return GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                if (selected) {
+                                  _openAuthForSelectedLanguage();
+                                } else {
+                                  _languageController.animateToItem(
+                                    index,
+                                    duration: const Duration(milliseconds: 340),
+                                    curve: Curves.easeOutCubic,
+                                  );
+                                }
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: selected
+                                      ? const Color(0xFFE4EAF2)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
+                                alignment: Alignment.center,
+                                child: AnimatedDefaultTextStyle(
+                                  duration: const Duration(milliseconds: 180),
+                                  style: TextStyle(
+                                    color: selected
+                                        ? const Color(0xFF06111E)
+                                        : const Color(0xFF9AABBB),
+                                    fontSize: selected ? 24 : 21,
+                                    fontWeight: selected
+                                        ? FontWeight.w800
+                                        : FontWeight.w600,
+                                    letterSpacing: .2,
+                                  ),
+                                  child: Text(_names[index]),
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      _tapToContinueLabel,
+                      style: const TextStyle(
+                        color: Color(0xFF8194A8),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: constraints.maxHeight * .04),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
-      ),
-    );
+      );
+
+  String get _chooseLanguageLabel {
+    switch (_codes[_selectedIndex]) {
+      case 'bn':
+        return 'আপনার ভাষা নির্বাচন করুন';
+      case 'hi':
+        return 'अपनी भाषा चुनें';
+      default:
+        return 'Choose your language';
+    }
+  }
+
+  String get _tapToContinueLabel {
+    switch (_codes[_selectedIndex]) {
+      case 'bn':
+        return 'এগিয়ে যেতে নির্বাচিত ভাষায় ট্যাপ করুন';
+      case 'hi':
+        return 'आगे बढ़ने के लिए चुनी गई भाषा पर टैप करें';
+      default:
+        return 'Tap the selected language to continue';
+    }
   }
 }

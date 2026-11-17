@@ -26,6 +26,18 @@ class AuthProvider extends ChangeNotifier {
   bool get isOwner => user?.isOwner ?? false;
   bool get isBasic => user?.isBasic ?? false;
 
+  void updateUser(AppUser updatedUser) {
+    final session = _session;
+    if (session == null) return;
+    _session = AuthSession(
+      user: updatedUser,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: session.expiresAt,
+    );
+    notifyListeners();
+  }
+
   Future<void> bootstrap() async {
     _setBusy(true);
     try {
@@ -56,6 +68,7 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     String? businessName,
     String? businessAddress,
+    String? verificationToken,
   }) =>
       _run(() => _service.signup(
             role: role,
@@ -66,7 +79,12 @@ class AuthProvider extends ChangeNotifier {
             password: password,
             businessName: businessName,
             businessAddress: businessAddress,
+            verificationToken: verificationToken,
           ));
+
+  Future<bool> emailExists(String email) => _service.emailExists(email);
+
+  Future<bool> phoneExists(String phone) => _service.phoneExists(phone);
 
   Future<void> sendOtp({
     required String destination,

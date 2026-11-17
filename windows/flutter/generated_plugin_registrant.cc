@@ -7,8 +7,14 @@
 #include "generated_plugin_registrant.h"
 
 #include <connectivity_plus/connectivity_plus_windows_plugin.h>
+#include <universal_ble/universal_ble_plugin_c_api.h>
+#include <flutter_thermal_printer/flutter_thermal_printer_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   ConnectivityPlusWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("ConnectivityPlusWindowsPlugin"));
+  UniversalBlePluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("UniversalBlePluginCApi"));
+  FlutterThermalPrinterPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterThermalPrinterPluginCApi"));
 }

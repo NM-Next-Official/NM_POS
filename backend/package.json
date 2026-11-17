@@ -1,0 +1,21 @@
+{
+  "name": "nm-pos-mail-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test:email": "node scripts/test-email.mjs",
+    "authorize:gmail": "node scripts/authorize-gmail.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "googleapis": "^189.0.0",
+    "helmet": "^8.1.0",
+    "nodemailer": "^10.6.0"
+  }
+}

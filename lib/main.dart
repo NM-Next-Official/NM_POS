@@ -6,6 +6,7 @@ import 'config/db_config.dart';
 import 'languages/app_localizations.dart';
 import 'providers/auth_provider.dart';
 import 'screens/welcome_screen.dart';
+import 'screens/home_screen.dart';
 import 'services/auth/postgres_auth_service.dart';
 import 'services/db/postgres_db.dart';
 import 'utils/app_locale.dart';
@@ -97,7 +98,13 @@ class MyAppState extends State<MyApp> {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'NM POS',
-        theme: ThemeData.dark(),
+        theme: ThemeData.light().copyWith(
+          scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+          colorScheme: ThemeData.light().colorScheme.copyWith(
+                primary: const Color(0xFF182535),
+                secondary: const Color(0xFF2E67A0),
+              ),
+        ),
         locale: _locale,
         supportedLocales: AppLocale.supportedLocales,
         localizationsDelegates: const [
@@ -106,7 +113,11 @@ class MyAppState extends State<MyApp> {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        home: const WelcomeScreen(),
+        home: Consumer<AuthProvider>(
+          builder: (context, auth, _) => auth.status == AuthStatus.authenticated
+              ? const HomeScreen()
+              : const WelcomeScreen(),
+        ),
       ),
     );
   }

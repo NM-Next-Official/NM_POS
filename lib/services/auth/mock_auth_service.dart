@@ -110,6 +110,7 @@ class MockAuthService implements AuthService {
     required String password,
     String? businessName,
     String? businessAddress,
+    String? verificationToken,
   }) async {
     await _delay();
 

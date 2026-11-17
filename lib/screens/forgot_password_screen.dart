@@ -30,18 +30,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool _isEmail(String value) =>
       RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(value);
 
-  bool _isPhone(String value) =>
-      value.replaceAll(RegExp(r'\D'), '').length >= 8;
-
   Future<void> _sendCode() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final auth = context.read<AuthProvider>();
     final identifier = _identifierController.text.trim();
 
-    // Auto-detect: email → email channel, otherwise → phone channel
-    final channel =
-        _isEmail(identifier) ? OtpChannel.email : OtpChannel.phone;
+    const channel = OtpChannel.email;
 
     try {
       await auth.sendOtp(
@@ -88,10 +83,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ─── Single smart input: email OR phone ───
             AuthTextField(
               controller: _identifierController,
-              hint: t.emailOrPhone,
+              hint: t.enterYourEmail,
               icon: Icons.alternate_email_rounded,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.done,
@@ -99,7 +93,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return t.enterYourEmail;
                 final val = v.trim();
-                if (!_isEmail(val) && !_isPhone(val)) {
+                if (!_isEmail(val)) {
                   return t.enterYourEmail;
                 }
                 return null;

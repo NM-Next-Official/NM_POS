@@ -36,6 +36,7 @@ abstract class AuthService {
     required String password,
     String? businessName,
     String? businessAddress,
+    String? verificationToken,
   });
 
   // OTP

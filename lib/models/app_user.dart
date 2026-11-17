@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'user_role.dart';
 
 class AppUser {
@@ -10,6 +13,7 @@ class AppUser {
   final String? businessName;
   final String? businessAddress;
   final List<String> outletIds;
+  final Uint8List? profileImageData;
   final DateTime createdAt;
 
   const AppUser({
@@ -22,6 +26,7 @@ class AppUser {
     this.businessName,
     this.businessAddress,
     this.outletIds = const [],
+    this.profileImageData,
     required this.createdAt,
   });
 
@@ -41,6 +46,7 @@ class AppUser {
     String? businessName,
     String? businessAddress,
     List<String>? outletIds,
+    Uint8List? profileImageData,
     DateTime? createdAt,
   }) {
     return AppUser(
@@ -53,6 +59,7 @@ class AppUser {
       businessName: businessName ?? this.businessName,
       businessAddress: businessAddress ?? this.businessAddress,
       outletIds: outletIds ?? this.outletIds,
+      profileImageData: profileImageData ?? this.profileImageData,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -67,6 +74,8 @@ class AppUser {
         'businessName': businessName,
         'businessAddress': businessAddress,
         'outletIds': outletIds,
+        'profileImageData':
+            profileImageData == null ? null : base64Encode(profileImageData!),
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -80,6 +89,9 @@ class AppUser {
         businessName: json['businessName'] as String?,
         businessAddress: json['businessAddress'] as String?,
         outletIds: (json['outletIds'] as List?)?.cast<String>() ?? const [],
+        profileImageData: json['profileImageData'] is String
+            ? base64Decode(json['profileImageData'] as String)
+            : null,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 }

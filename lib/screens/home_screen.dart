@@ -1,339 +1,249 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../languages/app_localizations.dart';
+import '../models/app_user.dart';
 import '../providers/auth_provider.dart';
-import '../widgets/scanner_cart_icon.dart';
+import 'dashboard_screen.dart';
+import 'devices_screen.dart';
+import 'inventory_screen.dart';
 import 'profile_screen.dart';
+import 'scanner_pos_screen.dart';
+import 'auth_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String? businessName;
-
   const HomeScreen({super.key, this.businessName});
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 2;
+  int _selectedIndex = 0;
+  static const _items = [
+    _NavItem('Overview', 'Home', Icons.space_dashboard_outlined),
+    _NavItem('Inventory', 'Stock', Icons.inventory_2_outlined),
+    _NavItem('Point of sale', 'POS', Icons.point_of_sale_outlined),
+    _NavItem('Devices', 'Devices', Icons.devices_outlined),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context);
-    final auth = context.watch<AuthProvider>();
-
-    final displayName = widget.businessName ??
-        auth.user?.businessName ??
-        auth.user?.displayName ??
-        'Your Business Name';
-
+    final user = context.watch<AuthProvider>().user;
+    final businessName = widget.businessName ?? user?.businessName ?? 'NM POS';
+    final displayName = user?.displayName.trim().isNotEmpty == true
+        ? user!.displayName
+        : 'Account';
+    final wide = MediaQuery.sizeOf(context).width >= 760;
     return Scaffold(
-      backgroundColor: const Color(0xFF030D19),
+      backgroundColor: const Color(0xFFF5F7FA),
       body: SafeArea(
-        child: Column(
-          children: [
-            // ─── Header (only when NOT on profile) ───
-            if (_selectedIndex != 0)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-                child: Text(
-                  displayName,
-                  textAlign: TextAlign.center,
+        child: Row(children: [
+          if (wide) _sideNavigation(businessName),
+          Expanded(
+            child: Column(children: [
+              _topBar(businessName, displayName, user),
+              Expanded(child: _screen()),
+            ]),
+          ),
+        ]),
+      ),
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              backgroundColor: Colors.white,
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+              destinations: [
+                for (final item in _items)
+                  NavigationDestination(
+                      icon: Icon(item.icon), label: item.shortLabel),
+              ],
+            ),
+    );
+  }
+
+  Widget _sideNavigation(String businessName) => Container(
+        width: 220,
+        decoration: const BoxDecoration(
+          color: Color(0xFF06111E),
+          border: Border(right: BorderSide(color: Color(0xFF172738))),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 26),
+            child: Row(children: [
+              Image.asset('assets/logo.png',
+                  width: 42, height: 42, fit: BoxFit.contain),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    const Text('NM POS',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16)),
+                    Text(businessName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Color(0xFF9AABBB), fontSize: 11)),
+                  ])),
+            ]),
+          ),
+          for (var i = 0; i < _items.length; i++)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+              child: _NavButton(
+                  item: _items[i],
+                  selected: _selectedIndex == i,
+                  onTap: () => setState(() => _selectedIndex = i)),
+            ),
+          const Spacer(),
+          const Padding(
+              padding: EdgeInsets.all(18),
+              child: Text('Inventory · Sales · Reports',
+                  style: TextStyle(color: Color(0xFF718396), fontSize: 11))),
+        ]),
+      );
+
+  Widget _topBar(String businessName, String displayName, AppUser? user) =>
+      Container(
+        height: 68,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: const BoxDecoration(
+            color: Color(0xFF06111E),
+            border: Border(bottom: BorderSide(color: Color(0xFF172738)))),
+        child: Row(children: [
+          if (MediaQuery.sizeOf(context).width < 760) ...[
+            Image.asset('assets/logo.png',
+                width: 34, height: 34, fit: BoxFit.contain),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+              child: Text(businessName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16))),
+          PopupMenuButton<String>(
+            tooltip: 'Account menu',
+            onSelected: (value) {
+              if (value == 'profile') {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => Scaffold(
+                            backgroundColor: Color(0xFF030D19),
+                            body: SafeArea(
+                                child: ProfileScreen(initialUser: user)))));
+              } else if (value == 'logout') {
+                _signOut();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                  value: 'profile',
+                  child: ListTile(
+                      leading: Icon(Icons.person_outline),
+                      title: Text('Profile'))),
+              PopupMenuItem(
+                  value: 'logout',
+                  child: ListTile(
+                      leading: Icon(Icons.logout), title: Text('Sign out'))),
+            ],
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: const Color(0xFFE4EAF2),
+                backgroundImage: user?.profileImageData == null
+                    ? null
+                    : MemoryImage(user!.profileImageData!),
+                child: user?.profileImageData == null
+                    ? const Icon(Icons.person,
+                        size: 19, color: Color(0xFF182535))
+                    : null,
               ),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: Text(displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Color(0xFFE4EAF2),
+                          fontWeight: FontWeight.w600))),
+              const Icon(Icons.expand_more, color: Color(0xFF9AABBB)),
+            ]),
+          ),
+        ]),
+      );
 
-            // ─── Body ───
-            Expanded(
-              child: _buildBody(t),
-            ),
-
-            // ─── Bottom Nav ───
-            Container(
-              margin: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-              height: 76,
-              decoration: BoxDecoration(
-                color: const Color(0xFF14202E),
-                borderRadius: BorderRadius.circular(38),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // 1. Profile
-                  _NavIcon(
-                    tooltip: t.profile,
-                    icon: Icons.account_circle_outlined,
-                    isActive: _selectedIndex == 0,
-                    onTap: () => setState(() => _selectedIndex = 0),
-                  ),
-
-                  // 2. Inventory
-                  _NavIcon(
-                    tooltip: t.inventory,
-                    icon: Icons.home_work_outlined,
-                    isActive: _selectedIndex == 1,
-                    onTap: () => setState(() => _selectedIndex = 1),
-                  ),
-
-                  // 3. Center — Scanner
-                  _CenterScannerButton(
-                    isActive: _selectedIndex == 2,
-                    onTap: () => setState(() => _selectedIndex = 2),
-                  ),
-
-                  // 4. Discounts
-                  _DiscountIcon(
-                    isActive: _selectedIndex == 3,
-                    onTap: () => setState(() => _selectedIndex = 3),
-                  ),
-
-                  // 5. POS
-                  _NavIcon(
-                    tooltip: t.pos,
-                    icon: Icons.point_of_sale_rounded,
-                    isActive: _selectedIndex == 4,
-                    onTap: () => setState(() => _selectedIndex = 4),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBody(AppLocalizations t) {
+  Widget _screen() {
     switch (_selectedIndex) {
       case 0:
-        return const ProfileScreen();   // ← Full profile with logout
-
+        return DashboardScreen(
+            onSell: () => setState(() => _selectedIndex = 2),
+            onInventory: () => setState(() => _selectedIndex = 1));
       case 1:
-        return const _PlaceholderView(
-          icon: Icons.home_work_outlined,
-          label: 'Inventory',
-        );
-
+        return const InventoryScreen();
       case 2:
-        return const _PlaceholderView(
-          icon: Icons.qr_code_scanner_rounded,
-          label: 'Scanner',
-        );
-
+        return const ScannerPosScreen();
       case 3:
-        return const _PlaceholderView(
-          icon: Icons.local_offer_outlined,
-          label: 'Discounts',
-        );
-
-      case 4:
-        return const _PlaceholderView(
-          icon: Icons.point_of_sale_rounded,
-          label: 'POS',
-        );
-
+        return const DevicesScreen();
       default:
-        return const SizedBox();
+        return const SizedBox.shrink();
     }
   }
+
+  Future<void> _signOut() async {
+    await context.read<AuthProvider>().logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (_) => false,
+    );
+  }
 }
 
-// ──────────────────────────────────────────────────────────────
-//  Placeholder for future screens
-// ──────────────────────────────────────────────────────────────
-class _PlaceholderView extends StatelessWidget {
+class _NavItem {
+  const _NavItem(this.label, this.shortLabel, this.icon);
+  final String label, shortLabel;
   final IconData icon;
-  final String label;
-
-  const _PlaceholderView({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 64, color: Colors.white.withValues(alpha: 0.15)),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.35),
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Coming soon',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.2),
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-// ──────────────────────────────────────────────────────────────
-//  Nav icon (simple)
-// ──────────────────────────────────────────────────────────────
-class _NavIcon extends StatelessWidget {
-  final String tooltip;
-  final IconData icon;
-  final bool isActive;
+class _NavButton extends StatelessWidget {
+  const _NavButton(
+      {required this.item, required this.selected, required this.onTap});
+  final _NavItem item;
+  final bool selected;
   final VoidCallback onTap;
-
-  const _NavIcon({
-    required this.tooltip,
-    required this.icon,
-    required this.isActive,
-    required this.onTap,
-  });
-
   @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onTap,
-      icon: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isActive
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.transparent,
+  Widget build(BuildContext context) => Material(
+        color: selected ? const Color(0xFF16283A) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
+              child: Row(children: [
+                Icon(item.icon,
+                    size: 20,
+                    color: selected
+                        ? const Color(0xFFE4EAF2)
+                        : const Color(0xFF8092A5)),
+                const SizedBox(width: 12),
+                Text(item.label,
+                    style: TextStyle(
+                        color:
+                            selected ? Colors.white : const Color(0xFF9AABBB),
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600)),
+              ])),
         ),
-        child: Icon(
-          icon,
-          size: 30,
-          color: isActive
-              ? Colors.white
-              : Colors.white.withValues(alpha: 0.75),
-        ),
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Center button — Scanner + Cart
-// ──────────────────────────────────────────────────────────────
-class _CenterScannerButton extends StatelessWidget {
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _CenterScannerButton({
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          color: isActive ? const Color(0xFFFFFFFF) : const Color(0xFFCBD5E1),
-          shape: BoxShape.circle,
-          boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFFCBD5E1).withValues(alpha: 0.4),
-                    blurRadius: 18,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : null,
-        ),
-        child: const Center(
-          child: ScannerCartIcon(size: 32),
-        ),
-      ),
-    );
-  }
-}
-
-// ──────────────────────────────────────────────────────────────
-//  Discount icon — bag with % badge
-// ──────────────────────────────────────────────────────────────
-class _DiscountIcon extends StatelessWidget {
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _DiscountIcon({
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        isActive ? Colors.white : Colors.white.withValues(alpha: 0.75);
-
-    return IconButton(
-      tooltip: 'Discounts',
-      onPressed: onTap,
-      icon: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isActive
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.transparent,
-        ),
-        child: SizedBox(
-          width: 30,
-          height: 30,
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              Icon(
-                Icons.shopping_bag_outlined,
-                size: 28,
-                color: color,
-              ),
-              Positioned(
-                bottom: 4,
-                right: 6,
-                child: Text(
-                  '%',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      );
 }

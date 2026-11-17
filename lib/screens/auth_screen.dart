@@ -32,9 +32,6 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isEmail(String value) =>
       RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(value);
 
-  bool _isPhone(String value) =>
-      value.replaceAll(RegExp(r'\D'), '').length >= 8;
-
   Future<void> _handleLogin() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -42,9 +39,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final identifier = _identifierController.text.trim();
     final password = _passwordController.text;
 
-    final success = _isEmail(identifier)
-        ? await auth.loginWithEmail(identifier, password)
-        : await auth.loginWithPhone(identifier, password);
+    final success = await auth.loginWithEmail(identifier, password);
 
     if (!mounted) return;
 
@@ -71,7 +66,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
     return AuthScaffold(
       title: t.welcomeBack,
-      subtitle: t.emailOrPhone,
+      subtitle: t.enterYourEmail,
       showBackButton: true,
       logoSize: 220,
       child: Form(
@@ -81,22 +76,20 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             AuthTextField(
               controller: _identifierController,
-              hint: t.emailOrPhone,
+              hint: t.enterYourEmail,
               icon: Icons.alternate_email_rounded,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return t.enterYourEmail;
                 final val = v.trim();
-                if (!_isEmail(val) && !_isPhone(val)) {
+                if (!_isEmail(val)) {
                   return t.enterYourEmail;
                 }
                 return null;
               },
             ),
-
             const SizedBox(height: 14),
-
             AuthTextField(
               controller: _passwordController,
               hint: t.passwordHint,
@@ -110,9 +103,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 return null;
               },
             ),
-
             const SizedBox(height: 12),
-
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
@@ -128,18 +119,14 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
             AuthButton(
               label: auth.isBusy ? t.signingIn : t.signIn,
               loading: auth.isBusy,
               icon: Icons.login_rounded,
               onPressed: _handleLogin,
             ),
-
             const SizedBox(height: 24),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

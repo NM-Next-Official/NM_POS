@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../languages/app_localizations.dart';
+import '../models/otp_request.dart';
 import '../models/user_role.dart';
 import '../providers/auth_provider.dart';
+import '../services/auth/auth_service.dart';
 import '../widgets/auth/auth_button.dart';
 import '../widgets/auth/auth_scaffold.dart';
 import '../widgets/auth/auth_text_field.dart';
-import 'home_screen.dart';
+import 'otp_verification_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
   final UserRole role;
@@ -45,44 +47,88 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _isEmail(String value) =>
       RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$').hasMatch(value);
 
-  bool _isPhone(String value) =>
-      value.replaceAll(RegExp(r'\D'), '').length >= 8;
-
   Future<void> _handleSignup() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final auth = context.read<AuthProvider>();
-    final identifier = _identifierController.text.trim();
-    final useEmail = _isEmail(identifier);
+    final email = _identifierController.text.trim().toLowerCase();
 
-    final success = await auth.signup(
+    // 1. Verify email format
+    if (!_isEmail(email)) {
+      final t = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(t.enterYourEmail),
+          backgroundColor: const Color(0xFFB71C1C),
+        ),
+      );
+      return;
+    }
+
+    // 2. Check if email is already taken
+    final exists = await auth.emailExists(email);
+    if (!mounted) return;
+    if (exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This email is already registered. Please sign in instead.'),
+          backgroundColor: Color(0xFFB71C1C),
+        ),
+      );
+      return;
+    }
+
+    // 3. Send verification OTP email
+    try {
+      await auth.sendOtp(
+        destination: email,
+        channel: OtpChannel.email,
+        purpose: OtpPurpose.signup,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: const Color(0xFFB71C1C),
+        ),
+      );
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.errorMessage ?? 'Could not send verification code.'),
+          backgroundColor: const Color(0xFFB71C1C),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final pendingData = PendingSignupData(
       role: widget.role,
       firstName: _firstNameController.text.trim(),
       lastName: _lastNameController.text.trim(),
-      email: useEmail ? identifier : null,
-      phone: useEmail ? null : identifier,
+      email: email,
       password: _passwordController.text,
       businessName: _isOwner ? _businessNameController.text.trim() : null,
       businessAddress: _isOwner ? _businessAddressController.text.trim() : null,
     );
 
-    if (!mounted) return;
-
-    if (success) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-        (_) => false,
-      );
-    } else {
-      final t = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.errorMessage ?? t.signupFailed),
-          backgroundColor: const Color(0xFFB71C1C),
+    // 4. Navigate to OTP verification screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OtpVerificationScreen(
+          destination: email,
+          channel: OtpChannel.email,
+          purpose: OtpPurpose.signup,
+          signupData: pendingData,
         ),
-      );
-    }
+      ),
+    );
   }
 
   @override
@@ -103,7 +149,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
           children: [
             _sectionLabel(t.personalDetails),
             const SizedBox(height: 8),
-
             Row(
               children: [
                 Expanded(
@@ -127,9 +172,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 14),
-
             if (_isOwner) ...[
               _sectionLabel(t.businessDetails),
               const SizedBox(height: 8),
@@ -149,28 +192,24 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ),
               const SizedBox(height: 14),
             ],
-
             _sectionLabel(t.accountDetails),
             const SizedBox(height: 8),
-
             AuthTextField(
               controller: _identifierController,
-              hint: t.emailOrPhone,
+              hint: t.enterYourEmail,
               icon: Icons.alternate_email_rounded,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return t.enterYourEmail;
                 final val = v.trim();
-                if (!_isEmail(val) && !_isPhone(val)) {
+                if (!_isEmail(val)) {
                   return t.enterYourEmail;
                 }
                 return null;
               },
             ),
-
             const SizedBox(height: 10),
-
             AuthTextField(
               controller: _passwordController,
               hint: t.passwordHint,
@@ -183,9 +222,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 return null;
               },
             ),
-
             const SizedBox(height: 10),
-
             AuthTextField(
               controller: _confirmPasswordController,
               hint: t.confirmPassword,
@@ -201,18 +238,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 return null;
               },
             ),
-
             const SizedBox(height: 18),
-
             AuthButton(
               label: auth.isBusy ? t.creatingAccount : t.signUp,
               loading: auth.isBusy,
               icon: Icons.person_add_alt_1_rounded,
               onPressed: _handleSignup,
             ),
-
             const SizedBox(height: 14),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
